@@ -1,0 +1,110 @@
+.footer {
+  padding-block: var(--space-6) var(--space-4);
+  border-top: 1px solid var(--color-line);
+}
+
+.footer__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-5);
+}
+
+@media (min-width: 860px) {
+  .footer__grid {
+    grid-template-columns: 0.9fr 1.1fr;
+  }
+}
+
+.footer h2 {
+  font-size: var(--step-3);
+  margin-top: var(--space-1);
+}
+
+.footer__contact-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.footer__contact-list a {
+  text-decoration: none;
+  color: var(--color-brass-bright);
+  font-size: var(--step-1);
+}
+
+.footer__socials {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-line);
+  display: flex;
+  gap: var(--space-3);
+}
+
+.footer__socials a {
+  text-decoration: none;
+  color: var(--color-text-muted);
+  font-size: var(--step--1);
+}
+
+.footer__form {
+  max-width: 440px;
+}
+
+.footer__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: var(--space-3);
+}
+
+.footer__field label {
+  font-size: var(--step--1);
+  color: var(--color-text-muted);
+}
+
+.footer__field input,
+.footer__field textarea {
+  background: var(--color-bg-raised);
+  border: 1px solid var(--color-line);
+  color: var(--color-text);
+  padding: 0.7rem 0.9rem;
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+}
+
+.footer__error {
+  color: var(--color-danger);
+  font-size: var(--step--1);
+  max-width: none;
+  margin-bottom: var(--space-2);
+}
+
+.footer__success {
+  color: var(--color-brass-bright);
+  font-size: var(--step--1);
+  max-width: none;
+  margin-bottom: var(--space-2);
+}
+
+.footer__bottom {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-line);
+  font-size: var(--step--1);
+  color: var(--color-text-faint);
+}
+
+.footer__bottom p {
+  max-width: none;
+  color: inherit;
+}
