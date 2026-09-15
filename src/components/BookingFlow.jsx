@@ -1,70 +1,133 @@
 import { useState, useEffect, useMemo } from "react";
 import { serviceService } from "../services/serviceService";
-import { barberService } from "../services/barberService";
 import { availabilityService } from "../services/availabilityService";
-import { appointmentService, buildClientWhatsappLink, formatDateBR } from "../services/appointmentService";
+import {
+  appointmentService,
+  buildClientWhatsappLink,
+  buildClientCancelWhatsappLink,
+  formatDateBR,
+} from "../services/appointmentService";
 import { storage } from "../services/storage";
-import { Check, Calendar, Clock, Scissors, User, Phone, ArrowLeft, ArrowRight, MessageCircle, AlertCircle } from "lucide-react";
+import {
+  Check,
+  Calendar,
+  Clock,
+  Scissors,
+  User,
+  Phone,
+  ArrowLeft,
+  ArrowRight,
+  MessageCircle,
+  AlertCircle,
+  Plus,
+  Trash2,
+  CalendarDays,
+  Search,
+  Sparkles,
+  ShieldCheck,
+} from "lucide-react";
 import "./BookingFlow.css";
 
 const STEPS = [
-  { id: 1, label: "Serviço", icon: Scissors },
-  { id: 2, label: "Profissional", icon: User },
-  { id: 3, label: "Data", icon: Calendar },
-  { id: 4, label: "Horário", icon: Clock },
-  { id: 5, label: "Seus dados", icon: Phone },
-  { id: 6, label: "Confirmação", icon: Check },
+  { id: 1, title: "Serviço", shortLabel: "Serviços", desc: "Escolha o que deseja fazer", icon: Scissors },
+  { id: 2, title: "Dia e Hora", shortLabel: "Dia e Hora", desc: "Escolha o melhor momento", icon: Calendar },
+  { id: 3, title: "Seus Dados", shortLabel: "Seus Dados", desc: "Nome e WhatsApp", icon: Phone },
+  { id: 4, title: "Confirmação", shortLabel: "Finalizar", desc: "Revise e confirme", icon: Check },
 ];
 
-function getTodayISO() {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function getIsoDate(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Gera os próximos 7 dias úteis para seleção rápida e amigável (ideal para idosos)
+function getQuickDays() {
+  const days = [];
+  const now = new Date();
+
+  for (let i = 0; i < 7; i++) {
+    const nextDate = new Date();
+    nextDate.setDate(now.getDate() + i);
+    const dayOfWeek = nextDate.getDay();
+    const iso = getIsoDate(nextDate);
+
+    let prefix = "";
+    if (i === 0) prefix = "Hoje";
+    else if (i === 1) prefix = "Amanhã";
+    else {
+      const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+      prefix = weekdayNames[dayOfWeek];
+    }
+
+    const dayMonth = `${String(nextDate.getDate()).padStart(2, "0")}/${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
+
+    days.push({
+      iso,
+      prefix,
+      dayMonth,
+      dayOfWeek,
+      isSunday: dayOfWeek === 0,
+    });
+  }
+  return days;
 }
 
 export default function BookingFlow({ onCompleted, initialServiceId = "", onClose = null }) {
   const [step, setStep] = useState(1);
   const [services, setServices] = useState([]);
-  const [barbers, setBarbers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Form State
-  const [selectedServiceId, setSelectedServiceId] = useState(initialServiceId);
-  const [selectedBarberId, setSelectedBarberId] = useState("qualquer");
-  const [selectedDate, setSelectedDate] = useState(getTodayISO());
+  // Seleção de múltiplos serviços (inicia vazio por padrão para escolha livre do cliente)
+  const [selectedServiceIds, setSelectedServiceIds] = useState(() => {
+    return initialServiceId ? [initialServiceId] : [];
+  });
+
+  // Data & Horário
+  const quickDaysList = useMemo(() => getQuickDays(), []);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    // Escolhe hoje se não for domingo, ou amanhã se for domingo
+    const days = getQuickDays();
+    return days[0].isSunday ? days[1].iso : days[0].iso;
+  });
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [selectedTime, setSelectedTime] = useState("");
+  const [availability, setAvailability] = useState({ isOpen: true, slots: [] });
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Dados do Cliente
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerNotes, setCustomerNotes] = useState("");
 
-  // Availability State
-  const [availability, setAvailability] = useState({ isOpen: true, slots: [] });
-  const [loadingSlots, setLoadingSlots] = useState(false);
+  // Estados de Envio & Confirmação
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
 
-  // Carregar serviços e barbeiros
+  // Modo de Consulta de Agendamento do Cliente (para cancelar ou verificar)
+  const [showLookupModal, setShowLookupModal] = useState(false);
+  const [lookupPhone, setLookupPhone] = useState("");
+  const [lookupResults, setLookupResults] = useState(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [cancelFeedback, setCancelFeedback] = useState("");
+
+  // Carrega serviços
   useEffect(() => {
+    let isCurrent = true;
     async function loadData() {
       try {
-        const [srvs, barbs] = await Promise.all([
-          serviceService.getAll(true),
-          barberService.getAll(true),
-        ]);
+        const srvs = await serviceService.getActive();
+        if (!isCurrent) return;
         setServices(srvs);
-        setBarbers(barbs);
         if (initialServiceId) {
-          setSelectedServiceId(initialServiceId);
-        } else if (srvs.length > 0 && !selectedServiceId) {
-          setSelectedServiceId(srvs[0].id);
+          setSelectedServiceIds([initialServiceId]);
         }
       } catch (err) {
-        console.error("Erro ao carregar dados:", err);
+        console.error("Erro ao carregar serviços:", err);
       } finally {
-        setLoading(false);
+        if (isCurrent) setLoading(false);
       }
     }
     loadData();
@@ -72,27 +135,137 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
     const unsubscribe = storage.subscribe(() => {
       loadData();
     });
-    return unsubscribe;
+    return () => {
+      isCurrent = false;
+      unsubscribe();
+    };
   }, [initialServiceId]);
 
-  // Carregar horários disponíveis quando a data, serviço ou barbeiro mudar
+  // Lista dos objetos de serviços selecionados
+  const selectedServices = useMemo(() => {
+    return services.filter((s) => selectedServiceIds.includes(s.id));
+  }, [services, selectedServiceIds]);
+
+  const totalPrice = useMemo(() => {
+    return selectedServices.reduce((acc, s) => acc + (s.price || 0), 0);
+  }, [selectedServices]);
+
+  const totalDuration = useMemo(() => {
+    return selectedServices.reduce((acc, s) => acc + (s.duration_minutes || 0), 0);
+  }, [selectedServices]);
+
+  const combinedServiceName = useMemo(() => {
+    if (selectedServices.length === 0) return "";
+    return selectedServices.map((s) => s.name).join(" + ");
+  }, [selectedServices]);
+
+  // Função utilitária para rolar suavemente até o elemento desejado
+  function scrollToElement(target, offset = 16) {
+    if (!target) return;
+    const el = typeof target === "string" ? document.querySelector(target) : target;
+    if (!el) return;
+
+    // Se estiver dentro de um modal com scroll próprio
+    const modalBody = el.closest(".booking-modal-body") || document.querySelector(".booking-modal-body");
+    if (modalBody && modalBody.contains(el)) {
+      const bodyRect = modalBody.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const targetScrollTop = modalBody.scrollTop + (elRect.top - bodyRect.top) - offset;
+      modalBody.scrollTo({
+        top: Math.max(0, targetScrollTop),
+        behavior: "smooth",
+      });
+      return;
+    }
+
+    // Se estiver na página direta
+    const headerOffset = 80;
+    const elementPosition = el.getBoundingClientRect().top;
+    const offsetPosition = elementPosition + window.pageYOffset - headerOffset - offset;
+    window.scrollTo({
+      top: Math.max(0, offsetPosition),
+      behavior: "smooth",
+    });
+  }
+
+  // Foca automaticamente no campo de nome quando o usuário avança para o Passo 3
+  useEffect(() => {
+    if (step === 3) {
+      const timer = setTimeout(() => {
+        const nameInput = document.getElementById("customer-name-input");
+        if (nameInput) {
+          nameInput.focus({ preventScroll: true });
+        }
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
+
+  // Rola para o comprovante de sucesso quando o agendamento for concluído
+  useEffect(() => {
+    if (confirmedBooking) {
+      const timer = setTimeout(() => {
+        scrollToElement("#booking-success-view", 16);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [confirmedBooking]);
+
+  // Serviços sugeridos que ainda não foram selecionados (para combos fáceis com 1 clique)
+  const availableUpsells = useMemo(() => {
+    return services.filter((s) => !selectedServiceIds.includes(s.id));
+  }, [services, selectedServiceIds]);
+
+  // Toggle serviço (permite marcar e desmarcar qualquer serviço livremente)
+  function handleToggleService(serviceId) {
+    setSelectedServiceIds((prev) => {
+      if (prev.includes(serviceId)) {
+        return prev.filter((id) => id !== serviceId);
+      } else {
+        return [...prev, serviceId];
+      }
+    });
+    setErrors({});
+  }
+
+  function handleAddService(serviceId) {
+    if (!selectedServiceIds.includes(serviceId)) {
+      setSelectedServiceIds((prev) => [...prev, serviceId]);
+    }
+  }
+
+  // Seleção de dia
+  function handleSelectDay(dayIso) {
+    setShowCustomDatePicker(false);
+    setSelectedDate(dayIso);
+    setSelectedTime("");
+    setErrors({});
+  }
+
+  // Seleção de horário
+  function handleSelectTime(timeSlot) {
+    setSelectedTime(timeSlot);
+    setErrors({});
+  }
+
+  // Carrega horários disponíveis quando a data ou os serviços mudam
   useEffect(() => {
     let isCurrent = true;
     async function fetchSlots() {
-      if (!selectedDate) return;
+      if (!selectedDate || selectedServiceIds.length === 0) return;
       setLoadingSlots(true);
       try {
         const res = await availabilityService.getAvailableSlots(
           selectedDate,
-          selectedServiceId,
-          selectedBarberId
+          selectedServiceIds,
+          "barb-leandro",
+          totalDuration
         );
         if (isCurrent) {
           setAvailability(res);
-          // Se o horário selecionado antes não está mais disponível, limpa
-          if (selectedTime && !res.slots.some((s) => s.time === selectedTime)) {
-            setSelectedTime("");
-          }
+          setSelectedTime((prevTime) =>
+            prevTime && !res.slots.some((s) => s.time === prevTime) ? "" : prevTime
+          );
         }
       } catch (err) {
         console.error("Erro ao calcular slots:", err);
@@ -105,35 +278,46 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
     return () => {
       isCurrent = false;
     };
-  }, [selectedDate, selectedServiceId, selectedBarberId]);
+  }, [selectedDate, selectedServiceIds, totalDuration]);
 
-  const selectedService = useMemo(
-    () => services.find((s) => s.id === selectedServiceId),
-    [services, selectedServiceId]
-  );
+  // Separação dos horários em Manhã e Tarde para maior legibilidade
+  const morningSlots = useMemo(() => {
+    return availability.slots.filter((s) => s.time < "12:00");
+  }, [availability.slots]);
 
-  const selectedBarber = useMemo(() => {
-    if (selectedBarberId === "qualquer") {
-      return { id: "qualquer", name: "Qualquer disponível" };
+  const afternoonSlots = useMemo(() => {
+    return availability.slots.filter((s) => s.time >= "12:00");
+  }, [availability.slots]);
+
+  // Formatação automática simples de telefone para evitar erros
+  function handlePhoneChange(e) {
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
+    let formatted = raw;
+    if (raw.length > 2) {
+      formatted = `(${raw.slice(0, 2)}) ${raw.slice(2)}`;
     }
-    return barbers.find((b) => b.id === selectedBarberId) || { id: "qualquer", name: "Qualquer disponível" };
-  }, [barbers, selectedBarberId]);
+    if (raw.length > 7) {
+      formatted = `(${raw.slice(0, 2)}) ${raw.slice(2, 7)}-${raw.slice(7)}`;
+    }
+    setCustomerPhone(formatted);
+    if (errors.phone) setErrors((prev) => ({ ...prev, phone: "" }));
+  }
 
   // Validação por etapa
   function validateCurrentStep() {
     const errs = {};
     if (step === 1) {
-      if (!selectedServiceId) errs.service = "Selecione um serviço para continuar.";
+      if (selectedServiceIds.length === 0) {
+        errs.service = "Por favor, toque em pelo menos um serviço para continuar.";
+      }
     } else if (step === 2) {
-      if (!selectedBarberId) errs.barber = "Selecione um profissional.";
+      if (!selectedDate) errs.date = "Por favor, escolha um dia para o atendimento.";
+      if (!selectedTime) errs.time = "Por favor, toque em um dos horários disponíveis abaixo para continuar.";
     } else if (step === 3) {
-      if (!selectedDate) errs.date = "Selecione uma data.";
-    } else if (step === 4) {
-      if (!selectedTime) errs.time = "Selecione um horário disponível.";
-    } else if (step === 5) {
-      if (!customerName.trim()) errs.name = "Informe seu nome completo.";
-      if (!customerPhone.trim() || customerPhone.replace(/\D/g, "").length < 8) {
-        errs.phone = "Informe um WhatsApp ou telefone válido com DDD.";
+      if (!customerName.trim()) errs.name = "Por favor, digite seu nome.";
+      const digits = customerPhone.replace(/\D/g, "");
+      if (digits.length < 10) {
+        errs.phone = "Por favor, informe seu número de WhatsApp com DDD (ex: 89 99999-9999).";
       }
     }
     setErrors(errs);
@@ -142,7 +326,12 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
 
   function handleNext() {
     if (!validateCurrentStep()) return;
-    setStep((prev) => Math.min(prev + 1, 6));
+    setStep((prev) => Math.min(prev + 1, 4));
+    // Scroll suave para o topo do fluxo
+    const container = document.querySelector(".booking-modal-body") || window;
+    if (container.scrollTo) {
+      container.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function handleBack() {
@@ -154,27 +343,15 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
     if (!validateCurrentStep()) return;
     setSubmitting(true);
     try {
-      // Determina barbeiro real se "qualquer"
-      let actualBarberId = selectedBarberId;
-      let actualBarberName = selectedBarber.name;
-
-      if (selectedBarberId === "qualquer") {
-        const slotData = availability.slots.find((s) => s.time === selectedTime);
-        if (slotData && slotData.freeBarbers && slotData.freeBarbers.length > 0) {
-          actualBarberId = slotData.freeBarbers[0].id;
-          actualBarberName = slotData.freeBarbers[0].name;
-        }
-      }
-
       const newApt = await appointmentService.create({
         customer_name: customerName.trim(),
         customer_phone: customerPhone.trim(),
-        service_id: selectedService.id,
-        service_name: selectedService.name,
-        service_price: selectedService.price,
-        duration_minutes: selectedService.duration_minutes,
-        barber_id: actualBarberId,
-        barber_name: actualBarberName,
+        service_id: selectedServiceIds.join(","),
+        service_name: combinedServiceName,
+        service_price: totalPrice,
+        duration_minutes: totalDuration,
+        barber_id: "barb-leandro",
+        barber_name: "Leandro",
         date: selectedDate,
         start_time: selectedTime,
         status: "confirmed",
@@ -185,7 +362,7 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
       if (onCompleted) onCompleted(newApt);
     } catch (err) {
       console.error("Erro ao confirmar agendamento:", err);
-      setErrors({ submit: "Não foi possível registrar o agendamento. Tente novamente." });
+      setErrors({ submit: "Não foi possível registrar seu agendamento. Tente novamente." });
     } finally {
       setSubmitting(false);
     }
@@ -201,20 +378,51 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
     setErrors({});
   }
 
-  // Se já foi confirmado, exibe a tela de sucesso
+  // Consulta e cancelamento de agendamento por telefone
+  async function handleSearchCustomerAppointments(e) {
+    e.preventDefault();
+    if (!lookupPhone.trim()) return;
+    setLookupLoading(true);
+    setCancelFeedback("");
+    try {
+      const list = await appointmentService.getByPhone(lookupPhone);
+      setLookupResults(list);
+    } catch (err) {
+      console.error("Erro ao consultar agendamentos:", err);
+    } finally {
+      setLookupLoading(false);
+    }
+  }
+
+  async function handleCancelAppointment(apt) {
+    if (window.confirm(`Deseja realmente cancelar o agendamento de ${apt.service_name} no dia ${formatDateBR(apt.date)} às ${apt.start_time}?`)) {
+      try {
+        await appointmentService.cancelByCustomer(apt.id);
+        setCancelFeedback("Seu agendamento foi cancelado com sucesso no sistema.");
+        const list = await appointmentService.getByPhone(lookupPhone);
+        setLookupResults(list);
+      } catch (err) {
+        console.error("Erro ao cancelar:", err);
+      }
+    }
+  }
+
+  // TELA DE SUCESSO / COMPROVANTE
   if (confirmedBooking) {
     const whatsappLink = buildClientWhatsappLink(confirmedBooking);
+    const cancelWaLink = buildClientCancelWhatsappLink(confirmedBooking);
+
     return (
       <div className="booking-flow__success" id="booking-success-view">
         <div className="booking-flow__success-badge">
-          <Check size={36} />
+          <Check size={44} />
         </div>
         <p className="kicker">Agendamento Realizado com Sucesso!</p>
         <h2 className="booking-flow__success-title">
-          Tudo pronto, {confirmedBooking.customer_name.split(" ")[0]}!
+          Tudo certo, {confirmedBooking.customer_name.split(" ")[0]}!
         </h2>
         <p className="booking-flow__success-lead">
-          Seu horário está garantido em nosso sistema. Para maior comodidade, você também pode enviar a confirmação direta para o nosso WhatsApp.
+          Seu horário com o <strong>Barbeiro Leandro</strong> está confirmado em nosso sistema!
         </p>
 
         <div className="booking-flow__receipt">
@@ -223,27 +431,30 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
             <strong>{confirmedBooking.customer_name}</strong>
           </div>
           <div className="booking-flow__receipt-row">
-            <span>Serviço</span>
-            <strong>{confirmedBooking.service_name} (R$ {confirmedBooking.service_price})</strong>
+            <span>Serviço(s)</span>
+            <strong>{confirmedBooking.service_name}</strong>
           </div>
           <div className="booking-flow__receipt-row">
-            <span>Profissional</span>
-            <strong>{confirmedBooking.barber_name}</strong>
+            <span>Valor a pagar no local</span>
+            <strong className="booking-flow__receipt-price">R$ {confirmedBooking.service_price}</strong>
           </div>
           <div className="booking-flow__receipt-row">
-            <span>Data</span>
+            <span>Barbeiro</span>
+            <strong>Leandro</strong>
+          </div>
+          <div className="booking-flow__receipt-row">
+            <span>Dia</span>
             <strong>{formatDateBR(confirmedBooking.date)}</strong>
           </div>
           <div className="booking-flow__receipt-row">
-            <span>Horário</span>
-            <strong>{confirmedBooking.start_time} às {confirmedBooking.end_time}</strong>
-          </div>
-          <div className="booking-flow__receipt-row">
-            <span>WhatsApp</span>
-            <strong>{confirmedBooking.customer_phone}</strong>
+            <span>Horário Marcado</span>
+            <strong className="booking-flow__receipt-time">
+              {confirmedBooking.start_time} às {confirmedBooking.end_time}
+            </strong>
           </div>
         </div>
 
+        {/* Botão de Enviar WhatsApp */}
         <div className="booking-flow__success-actions">
           <a
             href={whatsappLink}
@@ -251,13 +462,42 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
             rel="noreferrer"
             className="btn btn-primary booking-flow__wa-btn"
           >
-            <MessageCircle size={18} />
-            Enviar confirmação no WhatsApp
+            <MessageCircle size={24} />
+            <span>Enviar Confirmação no WhatsApp do Leandro</span>
           </a>
+
+          {/* Tutorial e Instruções para Cancelamento / Remarcação */}
+          <div className="booking-flow__cancel-guide">
+            <div className="booking-flow__cancel-guide-header">
+              <AlertCircle size={22} />
+              <h4>Precisa cancelar ou mudar o horário?</h4>
+            </div>
+            <p>
+              Se acontecer qualquer imprevisto, você não precisa se preocupar:
+            </p>
+            <ul>
+              <li>
+                <strong>Opção 1:</strong> Toque no link abaixo para avisar o Leandro no WhatsApp com 1 toque.
+              </li>
+              <li>
+                <strong>Opção 2:</strong> Acesse este site a qualquer momento e clique em <em>"Já tem horário? Consultar"</em>.
+              </li>
+            </ul>
+
+            <a
+              href={cancelWaLink}
+              target="_blank"
+              rel="noreferrer"
+              className="booking-flow__cancel-wa-link"
+            >
+              <MessageCircle size={18} />
+              Avisar sobre cancelamento ou remarcação no WhatsApp
+            </a>
+          </div>
 
           <div className="booking-flow__secondary-btns">
             <button type="button" className="btn btn-outline" onClick={handleReset}>
-              Fazer novo agendamento
+              Agendar outro horário
             </button>
             {onClose && (
               <button type="button" className="btn btn-outline" onClick={onClose}>
@@ -274,274 +514,419 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
     return (
       <div className="booking-flow__loading">
         <div className="booking-flow__spinner" />
-        <p>Carregando serviços e profissionais...</p>
+        <p>Carregando serviços da barbearia...</p>
       </div>
     );
   }
 
+  const currentStepData = STEPS[step - 1];
+  const progressPercent = (step / STEPS.length) * 100;
+
+  const isStepValid =
+    (step === 1 && selectedServiceIds.length > 0) ||
+    (step === 2 && selectedDate && selectedTime && availability.isOpen && availability.slots.length > 0) ||
+    (step === 3 && customerName.trim() && customerPhone.replace(/\D/g, "").length >= 10) ||
+    step === 4;
+
   return (
     <div className="booking-flow">
-      {/* Progress Bar / Steps indicator */}
-      <nav className="booking-flow__steps-nav" aria-label="Progresso do agendamento">
-        <ol className="booking-flow__step-indicators">
-          {STEPS.map((s) => {
-            const isDone = s.id < step;
-            const isActive = s.id === step;
-            return (
-              <li
-                key={s.id}
-                className={`booking-flow__step-item ${isActive ? "is-active" : ""} ${isDone ? "is-done" : ""}`}
-              >
-                <button
-                  type="button"
-                  onClick={() => s.id < step && setStep(s.id)}
-                  disabled={s.id > step}
-                  className="booking-flow__step-btn"
-                >
-                  <span className="booking-flow__step-circle">
-                    {isDone ? <Check size={14} /> : s.id}
-                  </span>
-                  <span className="booking-flow__step-label">{s.label}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+      {/* Barra superior de status & consulta */}
+      <div className="booking-flow__top-bar">
+        <div className="booking-flow__barber-badge">
+          <span className="booking-flow__barber-dot" />
+          <span>Atendimento com o <strong>Barbeiro Leandro</strong></span>
+        </div>
 
-      {/* Conteúdo dinâmico de cada etapa */}
+        <button
+          type="button"
+          onClick={() => setShowLookupModal(true)}
+          className="booking-flow__lookup-trigger"
+          aria-label="Consultar agendamentos anteriores"
+        >
+          <Search size={15} />
+          <span>Já tem horário? Consultar</span>
+        </button>
+      </div>
+
+      {/* Barra de Progresso Clara para Idosos e Mobile */}
+      <div className="booking-flow__progress-card">
+        <div className="booking-flow__progress-meta">
+          <div className="booking-flow__progress-step-tag">
+            <span>Passo {step} de 4</span>
+          </div>
+          <h3 className="booking-flow__progress-title">{currentStepData.title}</h3>
+          <span className="booking-flow__progress-desc">{currentStepData.desc}</span>
+        </div>
+
+        {/* Linha visual de progresso */}
+        <div className="booking-flow__progress-track" aria-hidden="true">
+          <div
+            className="booking-flow__progress-fill"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+
+        {/* Indicadores de passos clicáveis */}
+        <nav className="booking-flow__steps-nav" aria-label="Navegação de passos">
+          <ol className="booking-flow__step-indicators">
+            {STEPS.map((s) => {
+              const isDone = s.id < step;
+              const isActive = s.id === step;
+              const isClickable = s.id < step;
+              return (
+                <li
+                  key={s.id}
+                  className={`booking-flow__step-item ${isActive ? "is-active" : ""} ${isDone ? "is-done" : ""}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => isClickable && setStep(s.id)}
+                    disabled={!isClickable}
+                    className="booking-flow__step-btn"
+                    title={isClickable ? `Voltar para o passo ${s.id}` : `Passo ${s.id}: ${s.shortLabel}`}
+                  >
+                    <span className="booking-flow__step-circle">
+                      {isDone ? <Check size={18} /> : s.id}
+                    </span>
+                    <span className="booking-flow__step-label">{s.shortLabel}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      </div>
+
+      {/* CONTEÚDO PRINCIPAL */}
       <div className="booking-flow__body">
-        {/* ETAPA 1: SERVIÇO */}
+        {/* ============================================================ */}
+        {/* PASSO 1: ESCOLHER SERVIÇOS */}
+        {/* ============================================================ */}
         {step === 1 && (
-          <div className="booking-flow__section">
-            <div className="booking-flow__header-step">
-              <h3>1. Escolha o serviço desejado</h3>
-              <p>Selecione um dos nossos procedimentos de alto padrão</p>
+          <div className="booking-flow__section" id="booking-step-1">
+            <div className="booking-flow__step-instruction">
+              <span className="booking-flow__instruction-badge">Instrução fácil</span>
+              <h4>Toque no serviço que você deseja agendar:</h4>
+              <p>Você pode tocar em mais de um serviço se quiser fazer barba, sobrancelha ou outros cuidados juntos.</p>
             </div>
 
             <div className="booking-flow__service-list">
               {services.map((srv) => {
-                const isSelected = selectedServiceId === srv.id;
+                const isSelected = selectedServiceIds.includes(srv.id);
                 return (
                   <button
                     type="button"
                     key={srv.id}
                     className={`booking-flow__service-card ${isSelected ? "is-selected" : ""}`}
-                    onClick={() => {
-                      setSelectedServiceId(srv.id);
-                      setErrors({});
-                    }}
+                    onClick={() => handleToggleService(srv.id)}
+                    aria-pressed={isSelected}
                   >
+                    <div className="booking-flow__radio-check">
+                      <div className={`booking-flow__check-box ${isSelected ? "is-checked" : ""}`}>
+                        {isSelected && <Check size={18} />}
+                      </div>
+                    </div>
+
                     <div className="booking-flow__service-info">
                       <div className="booking-flow__service-title-row">
                         <h4>{srv.name}</h4>
                         <span className="booking-flow__service-price">R$ {srv.price}</span>
                       </div>
-                      <p className="booking-flow__service-desc">{srv.description}</p>
+                      {srv.description && (
+                        <p className="booking-flow__service-desc">{srv.description}</p>
+                      )}
                       <div className="booking-flow__service-meta">
-                        <Clock size={14} />
-                        <span>Duração: {srv.duration_minutes} minutos</span>
-                      </div>
-                    </div>
-                    <div className="booking-flow__radio-check">
-                      <div className="booking-flow__check-circle">
-                        {isSelected && <Check size={14} />}
+                        <Clock size={16} />
+                        <span>Duração: cerca de {srv.duration_minutes} minutos</span>
+                        {isSelected && (
+                          <span className="booking-flow__selected-tag">
+                            <Check size={13} /> Selecionado
+                          </span>
+                        )}
                       </div>
                     </div>
                   </button>
                 );
               })}
             </div>
+
+            {/* Sugestões de adicionais com 1 toque */}
+            {selectedServiceIds.length > 0 && availableUpsells.length > 0 && (
+              <div className="booking-flow__upsell-card">
+                <div className="booking-flow__upsell-head">
+                  <Sparkles size={20} />
+                  <span>Deseja adicionar mais algum serviço ao seu corte?</span>
+                </div>
+                <div className="booking-flow__upsell-buttons">
+                  {availableUpsells.map((extra) => (
+                    <button
+                      type="button"
+                      key={extra.id}
+                      onClick={() => handleAddService(extra.id)}
+                      className="booking-flow__upsell-btn"
+                    >
+                      <Plus size={16} />
+                      <span>{extra.name} (+R$ {extra.price})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Resumo da Seleção com Botão de Avanço Imediato */}
+            {selectedServiceIds.length > 0 ? (
+              <div className="booking-flow__summary-callout" id="booking-step1-summary">
+                <div className="booking-flow__summary-callout-info">
+                  <span className="booking-flow__summary-callout-count">
+                    ✓ {selectedServices.length} {selectedServices.length === 1 ? "serviço selecionado" : "serviços selecionados"}:
+                  </span>
+                  <strong>{combinedServiceName}</strong>
+                  <span className="booking-flow__summary-callout-totals">
+                    Valor: <strong>R$ {totalPrice}</strong> · Tempo total: <strong>{totalDuration} min</strong>
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-primary booking-flow__callout-btn"
+                  onClick={handleNext}
+                >
+                  <span>Continuar para o Horário</span>
+                  <ArrowRight size={20} />
+                </button>
+              </div>
+            ) : (
+              <div className="booking-flow__empty-selection-hint">
+                <p>Selecione um corte ou serviço acima para habilitar o botão de continuar.</p>
+              </div>
+            )}
+
             {errors.service && <p className="booking-flow__error-msg">{errors.service}</p>}
           </div>
         )}
 
-        {/* ETAPA 2: BARBEIRO */}
+        {/* ============================================================ */}
+        {/* PASSO 2: DIA E HORÁRIO JUNTOS */}
+        {/* ============================================================ */}
         {step === 2 && (
-          <div className="booking-flow__section">
-            <div className="booking-flow__header-step">
-              <h3>2. Escolha o profissional</h3>
-              <p>Você pode escolher seu barbeiro de preferência ou o primeiro livre</p>
-            </div>
-
-            <div className="booking-flow__barber-grid">
-              {/* Opção Qualquer disponível */}
-              <button
-                type="button"
-                className={`booking-flow__barber-card ${selectedBarberId === "qualquer" ? "is-selected" : ""}`}
-                onClick={() => setSelectedBarberId("qualquer")}
-              >
-                <div className="booking-flow__barber-avatar-placeholder">
-                  <User size={24} />
-                </div>
-                <div className="booking-flow__barber-info">
-                  <h4>Qualquer profissional</h4>
-                  <p>Maior disponibilidade de horários</p>
-                </div>
-                {selectedBarberId === "qualquer" && <Check size={18} className="booking-flow__accent-check" />}
-              </button>
-
-              {/* Barbeiros cadastrados */}
-              {barbers.map((b) => {
-                const isSelected = selectedBarberId === b.id;
-                return (
-                  <button
-                    type="button"
-                    key={b.id}
-                    className={`booking-flow__barber-card ${isSelected ? "is-selected" : ""}`}
-                    onClick={() => setSelectedBarberId(b.id)}
-                  >
-                    <img src={b.avatar_url} alt={b.name} className="booking-flow__barber-avatar" />
-                    <div className="booking-flow__barber-info">
-                      <h4>{b.name}</h4>
-                      <p>{b.specialties || "Especialista em corte e barba"}</p>
-                    </div>
-                    {isSelected && <Check size={18} className="booking-flow__accent-check" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ETAPA 3: DATA */}
-        {step === 3 && (
-          <div className="booking-flow__section">
-            <div className="booking-flow__header-step">
-              <h3>3. Escolha a data</h3>
-              <p>Selecione o dia em que deseja o atendimento</p>
-            </div>
-
-            <div className="booking-flow__date-picker-wrap">
-              <label htmlFor="booking-date-input" className="booking-flow__field-label">
-                <Calendar size={18} />
-                <span>Data do atendimento</span>
-              </label>
-              <input
-                id="booking-date-input"
-                type="date"
-                className="booking-flow__date-input"
-                min={getTodayISO()}
-                value={selectedDate}
-                onChange={(e) => {
-                  setSelectedDate(e.target.value);
-                  setSelectedTime("");
-                }}
-              />
-            </div>
-
-            {!availability.isOpen && (
-              <div className="booking-flow__alert-banner">
-                <AlertCircle size={20} />
-                <span>{availability.reason || "Não haverá atendimento nesta data."}</span>
-              </div>
-            )}
-            {errors.date && <p className="booking-flow__error-msg">{errors.date}</p>}
-          </div>
-        )}
-
-        {/* ETAPA 4: HORÁRIOS DISPONÍVEIS */}
-        {step === 4 && (
-          <div className="booking-flow__section">
-            <div className="booking-flow__header-step">
-              <h3>4. Escolha o horário</h3>
+          <div className="booking-flow__section" id="booking-step-2">
+            <div className="booking-flow__step-instruction">
+              <span className="booking-flow__instruction-badge">Instrução fácil</span>
+              <h4>1º Escolha o dia e 2º Toque no horário livre:</h4>
               <p>
-                Horários calculados para <strong>{selectedService?.name}</strong> ({selectedService?.duration_minutes} min) em{" "}
-                <strong>{formatDateBR(selectedDate)}</strong>
+                Serviço escolhido: <strong>{combinedServiceName}</strong> (Duração: {totalDuration} min)
               </p>
             </div>
 
-            {loadingSlots ? (
-              <div className="booking-flow__loading-slots">
-                <div className="booking-flow__spinner" />
-                <p>Verificando disponibilidade da equipe...</p>
-              </div>
-            ) : !availability.isOpen ? (
-              <div className="booking-flow__alert-banner">
-                <AlertCircle size={20} />
-                <span>{availability.reason || "Estabelecimento fechado neste dia."}</span>
-              </div>
-            ) : availability.slots.length === 0 ? (
-              <div className="booking-flow__empty-slots">
-                <AlertCircle size={24} />
-                <h4>Nenhum horário livre restante nesta data</h4>
-                <p>Por favor, selecione outra data ou escolha outro profissional.</p>
-                <button type="button" className="btn btn-outline" onClick={() => setStep(3)}>
-                  Alterar data
-                </button>
-              </div>
-            ) : (
-              <div className="booking-flow__slots-grid">
-                {availability.slots.map((slot) => {
-                  const isSelected = selectedTime === slot.time;
+            {/* Seletor Rápido de Dias */}
+            <div className="booking-flow__quick-days-container" id="booking-step2-days">
+              <label className="booking-flow__field-label">
+                Toque no dia que você prefere vir:
+              </label>
+
+              <div className="booking-flow__quick-days-grid">
+                {quickDaysList.map((day) => {
+                  const isSelected = selectedDate === day.iso && !showCustomDatePicker;
                   return (
                     <button
                       type="button"
-                      key={slot.time}
-                      className={`booking-flow__slot-btn ${isSelected ? "is-selected" : ""}`}
-                      onClick={() => {
-                        setSelectedTime(slot.time);
-                        setErrors({});
-                      }}
+                      key={day.iso}
+                      className={`booking-flow__quick-day-btn ${isSelected ? "is-selected" : ""} ${day.isSunday ? "is-closed" : ""}`}
+                      onClick={() => handleSelectDay(day.iso)}
+                      disabled={day.isSunday}
+                      title={day.isSunday ? "Fechado aos Domingos" : `Selecionar ${day.prefix}`}
                     >
-                      <Clock size={14} />
-                      <span className="booking-flow__slot-time">{slot.time}</span>
-                      <span className="booking-flow__slot-sub">até {slot.endTime}</span>
+                      <span className="booking-flow__quick-day-prefix">{day.prefix}</span>
+                      <strong className="booking-flow__quick-day-date">{day.dayMonth}</strong>
+                      {day.isSunday ? (
+                        <span className="booking-flow__quick-day-closed">Fechado</span>
+                      ) : (
+                        <span className="booking-flow__quick-day-status">Disponível</span>
+                      )}
                     </button>
                   );
                 })}
               </div>
-            )}
-            {errors.time && <p className="booking-flow__error-msg">{errors.time}</p>}
+
+              {/* Opção para outra data no calendário manual */}
+              <div className="booking-flow__custom-date-row">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomDatePicker((v) => !v)}
+                  className="booking-flow__text-link-btn"
+                >
+                  <CalendarDays size={18} />
+                  <span>{showCustomDatePicker ? "Fechar calendário manual" : "Prefere escolher outra data mais para frente?"}</span>
+                </button>
+
+                {showCustomDatePicker && (
+                  <div className="booking-flow__custom-date-input-wrap">
+                    <label className="booking-flow__sub-label">Escolha a data no calendário:</label>
+                    <input
+                      type="date"
+                      min={getIsoDate(new Date())}
+                      value={selectedDate}
+                      onChange={(e) => handleSelectDay(e.target.value)}
+                      className="booking-flow__date-input"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Visualização de Horários Disponíveis do Dia Selecionado */}
+            <div className="booking-flow__slots-container" id="booking-slots-container">
+              <div className="booking-flow__slots-head">
+                <Clock size={20} />
+                <h4>Horários livres para {formatDateBR(selectedDate)}:</h4>
+              </div>
+
+              {loadingSlots ? (
+                <div className="booking-flow__loading-slots">
+                  <div className="booking-flow__spinner" />
+                  <p>Buscando horários disponíveis com o Leandro...</p>
+                </div>
+              ) : !availability.isOpen ? (
+                <div className="booking-flow__alert-banner">
+                  <AlertCircle size={26} />
+                  <div>
+                    <strong>Barbearia Fechada nesta data</strong>
+                    <p>{availability.reason || "Não haverá atendimento neste dia."}</p>
+                  </div>
+                </div>
+              ) : availability.slots.length === 0 ? (
+                <div className="booking-flow__empty-slots">
+                  <AlertCircle size={32} />
+                  <h4>Todos os horários deste dia já foram preenchidos</h4>
+                  <p>Por favor, toque em outro dia nos botões acima para ver outros horários disponíveis.</p>
+                </div>
+              ) : (
+                <div className="booking-flow__slots-groups">
+                  {/* Banner de horário selecionado */}
+                  {selectedTime && (
+                    <div className="booking-flow__selected-time-banner">
+                      <Check size={20} />
+                      <span>
+                        Horário escolhido: <strong>{formatDateBR(selectedDate)} às {selectedTime}</strong>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Manhã */}
+                  {morningSlots.length > 0 && (
+                    <div className="booking-flow__time-group">
+                      <h5 className="booking-flow__time-group-title">🌅 Manhã (8h às 12h)</h5>
+                      <div className="booking-flow__slots-grid">
+                        {morningSlots.map((slot) => {
+                          const isSelected = selectedTime === slot.time;
+                          return (
+                            <button
+                              type="button"
+                              key={slot.time}
+                              className={`booking-flow__slot-btn ${isSelected ? "is-selected" : ""}`}
+                              onClick={() => handleSelectTime(slot.time)}
+                            >
+                              <strong className="booking-flow__slot-time">{slot.time}</strong>
+                              <span className="booking-flow__slot-sub">até {slot.endTime}</span>
+                              {isSelected && <Check size={18} className="booking-flow__slot-check" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tarde */}
+                  {afternoonSlots.length > 0 && (
+                    <div className="booking-flow__time-group">
+                      <h5 className="booking-flow__time-group-title">☀️ Tarde (12h às 19h)</h5>
+                      <div className="booking-flow__slots-grid">
+                        {afternoonSlots.map((slot) => {
+                          const isSelected = selectedTime === slot.time;
+                          return (
+                            <button
+                              type="button"
+                              key={slot.time}
+                              className={`booking-flow__slot-btn ${isSelected ? "is-selected" : ""}`}
+                              onClick={() => handleSelectTime(slot.time)}
+                            >
+                              <strong className="booking-flow__slot-time">{slot.time}</strong>
+                              <span className="booking-flow__slot-sub">até {slot.endTime}</span>
+                              {isSelected && <Check size={18} className="booking-flow__slot-check" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {errors.date && <p className="booking-flow__error-msg">{errors.date}</p>}
+              {errors.time && <p className="booking-flow__error-msg">{errors.time}</p>}
+            </div>
           </div>
         )}
 
-        {/* ETAPA 5: SEUS DADOS */}
-        {step === 5 && (
-          <div className="booking-flow__section">
-            <div className="booking-flow__header-step">
-              <h3>5. Seus dados de contato</h3>
-              <p>Informações para confirmação do seu horário</p>
+        {/* ============================================================ */}
+        {/* PASSO 3: SEUS DADOS */}
+        {/* ============================================================ */}
+        {step === 3 && (
+          <div className="booking-flow__section" id="booking-step-3">
+            <div className="booking-flow__step-instruction">
+              <span className="booking-flow__instruction-badge">Instrução fácil</span>
+              <h4>Preencha seu nome e o número do seu WhatsApp:</h4>
+              <p>Usaremos seu WhatsApp para enviar o lembrete do horário para você não esquecer.</p>
             </div>
 
-            <div className="booking-flow__form-group">
+            <div className="booking-flow__form-group" id="booking-step3-form">
               <div className="booking-flow__input-field">
-                <label htmlFor="customer-name-field">
-                  Nome completo <span className="booking-flow__req">*</span>
+                <label htmlFor="customer-name-input">
+                  Seu Nome Completo <span className="booking-flow__req">*</span>
                 </label>
                 <input
-                  id="customer-name-field"
+                  id="customer-name-input"
                   type="text"
-                  placeholder="Ex: Carlos Eduardo Silveira"
+                  placeholder="Digite seu nome (Ex: João da Silva)"
                   value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="booking-flow__text-input"
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    if (errors.name) setErrors((prev) => ({ ...prev, name: "" }));
+                  }}
+                  className="booking-flow__text-input booking-flow__text-input--large"
                   autoComplete="name"
+                  autoCapitalize="words"
+                  required
                 />
                 {errors.name && <p className="booking-flow__error-msg">{errors.name}</p>}
               </div>
 
               <div className="booking-flow__input-field">
-                <label htmlFor="customer-phone-field">
-                  WhatsApp / Celular com DDD <span className="booking-flow__req">*</span>
+                <label htmlFor="customer-phone-input">
+                  Seu Celular / WhatsApp com DDD <span className="booking-flow__req">*</span>
                 </label>
                 <input
-                  id="customer-phone-field"
+                  id="customer-phone-input"
                   type="tel"
-                  placeholder="Ex: (89) 9 9988-7766"
+                  inputMode="tel"
+                  placeholder="(89) 9 9999-9999"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="booking-flow__text-input"
+                  onChange={handlePhoneChange}
+                  className="booking-flow__text-input booking-flow__text-input--large"
                   autoComplete="tel"
+                  required
                 />
+                <span className="booking-flow__input-hint">
+                  ✓ Digite com DDD (Exemplo: 89 99999-9999).
+                </span>
                 {errors.phone && <p className="booking-flow__error-msg">{errors.phone}</p>}
               </div>
 
               <div className="booking-flow__input-field">
-                <label htmlFor="customer-notes-field">Observações ou preferências (opcional)</label>
+                <label htmlFor="customer-notes-input">Alguma observação ou preferência? (Opcional)</label>
                 <textarea
-                  id="customer-notes-field"
-                  placeholder="Ex: Primeira vez na barbearia / prefiro máquina 2 nos lados"
+                  id="customer-notes-input"
+                  placeholder="Ex: Primeira vez na barbearia, prefiro cortar na tesoura..."
                   rows={2}
                   value={customerNotes}
                   onChange={(e) => setCustomerNotes(e.target.value)}
@@ -552,36 +937,40 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
           </div>
         )}
 
-        {/* ETAPA 6: REVISÃO & CONFIRMAÇÃO */}
-        {step === 6 && (
-          <div className="booking-flow__section">
-            <div className="booking-flow__header-step">
-              <h3>6. Revise e Confirme seu Agendamento</h3>
-              <p>Confira todos os detalhes antes de concluir</p>
+        {/* ============================================================ */}
+        {/* PASSO 4: CONFIRMAÇÃO & RESUMO */}
+        {/* ============================================================ */}
+        {step === 4 && (
+          <div className="booking-flow__section" id="booking-step-4">
+            <div className="booking-flow__step-instruction">
+              <span className="booking-flow__instruction-badge">Instrução fácil</span>
+              <h4>Revise seus dados com calma antes de confirmar:</h4>
+              <p>Confira o serviço, o dia e o horário marcados com o Leandro.</p>
             </div>
 
-            <div className="booking-flow__review-card">
+            <div className="booking-flow__review-card" id="booking-step4-review">
               <div className="booking-flow__review-item">
-                <Scissors size={20} className="booking-flow__review-icon" />
+                <Scissors size={26} className="booking-flow__review-icon" />
                 <div>
-                  <span className="booking-flow__review-label">Serviço</span>
-                  <strong className="booking-flow__review-value">{selectedService?.name}</strong>
+                  <span className="booking-flow__review-label">Serviço Escolhido</span>
+                  <strong className="booking-flow__review-value">{combinedServiceName}</strong>
                   <span className="booking-flow__review-sub">
-                    R$ {selectedService?.price} · {selectedService?.duration_minutes} min
+                    Total: R$ {totalPrice} · Duração estimada: {totalDuration} min
                   </span>
                 </div>
               </div>
 
               <div className="booking-flow__review-item">
-                <User size={20} className="booking-flow__review-icon" />
+                <User size={26} className="booking-flow__review-icon" />
                 <div>
                   <span className="booking-flow__review-label">Profissional</span>
-                  <strong className="booking-flow__review-value">{selectedBarber?.name}</strong>
+                  <strong className="booking-flow__review-value">Barbeiro Leandro</strong>
+                  <span className="booking-flow__review-sub">Atendimento dedicado</span>
                 </div>
               </div>
 
               <div className="booking-flow__review-item">
-                <Calendar size={20} className="booking-flow__review-icon" />
+                <Calendar size={26} className="booking-flow__review-icon" />
                 <div>
                   <span className="booking-flow__review-label">Data e Horário</span>
                   <strong className="booking-flow__review-value">
@@ -591,9 +980,9 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
               </div>
 
               <div className="booking-flow__review-item">
-                <Phone size={20} className="booking-flow__review-icon" />
+                <Phone size={26} className="booking-flow__review-icon" />
                 <div>
-                  <span className="booking-flow__review-label">Cliente</span>
+                  <span className="booking-flow__review-label">Seus Dados de Contato</span>
                   <strong className="booking-flow__review-value">{customerName}</strong>
                   <span className="booking-flow__review-sub">{customerPhone}</span>
                 </div>
@@ -602,11 +991,19 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
               {customerNotes && (
                 <div className="booking-flow__review-item">
                   <div className="booking-flow__review-notes">
-                    <span className="booking-flow__review-label">Observações</span>
+                    <span className="booking-flow__review-label">Observação</span>
                     <p className="booking-flow__review-notes-text">{customerNotes}</p>
                   </div>
                 </div>
               )}
+
+              {/* Mensagem de segurança e tranquilidade para o cliente */}
+              <div className="booking-flow__peace-of-mind">
+                <ShieldCheck size={22} />
+                <span>
+                  <strong>Sem cobrança antecipada:</strong> O pagamento é feito diretamente na barbearia no dia do seu corte (Dinheiro, PIX ou Cartão).
+                </span>
+              </div>
             </div>
 
             {errors.submit && <p className="booking-flow__error-msg">{errors.submit}</p>}
@@ -614,26 +1011,37 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
         )}
       </div>
 
-      {/* Navegação Inferior (Voltar / Avançar / Confirmar) */}
-      <div className="booking-flow__footer">
+      {/* RODAPÉ DE NAVEGAÇÃO ENTRE PASSOS (Adaptado para Desktop & Mobile) */}
+      <div className="booking-flow__footer" id="booking-footer-nav">
         {step > 1 ? (
-          <button type="button" className="btn btn-outline" onClick={handleBack} disabled={submitting}>
-            <ArrowLeft size={16} />
-            Voltar
-          </button>
-        ) : (
-          <div />
-        )}
-
-        {step < 6 ? (
           <button
             type="button"
-            className="btn btn-primary"
-            onClick={handleNext}
-            disabled={step === 4 && (!selectedTime || !availability.isOpen || availability.slots.length === 0)}
+            className="btn btn-outline booking-flow__back-btn"
+            onClick={handleBack}
+            disabled={submitting}
           >
-            Continuar
-            <ArrowRight size={16} />
+            <ArrowLeft size={20} />
+            <span>Voltar passo</span>
+          </button>
+        ) : (
+          <div className="booking-flow__footer-placeholder" />
+        )}
+
+        {step < 4 ? (
+          <button
+            type="button"
+            className="btn btn-primary booking-flow__next-btn"
+            onClick={handleNext}
+            disabled={!isStepValid}
+          >
+            <span>
+              {step === 1
+                ? "Continuar para o Horário"
+                : step === 2
+                ? "Continuar para Meus Dados"
+                : "Continuar para Revisão"}
+            </span>
+            <ArrowRight size={20} />
           </button>
         ) : (
           <button
@@ -642,11 +1050,114 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
             onClick={handleConfirm}
             disabled={submitting}
           >
-            {submitting ? "Confirmando..." : "Confirmar Agendamento"}
-            <Check size={18} />
+            <Check size={22} />
+            <span>{submitting ? "Confirmando..." : "Confirmar Agendamento"}</span>
           </button>
         )}
       </div>
+
+      {/* MODAL DE CONSULTA / CANCELAMENTO */}
+      {showLookupModal && (
+        <div
+          className="booking-flow__modal-overlay"
+          onClick={() => setShowLookupModal(false)}
+          data-lenis-prevent="true"
+        >
+          <div
+            className="booking-flow__lookup-card"
+            onClick={(e) => e.stopPropagation()}
+            data-lenis-prevent="true"
+          >
+            <div className="booking-flow__lookup-header">
+              <h3>Consultar seus Agendamentos</h3>
+              <button
+                type="button"
+                className="booking-flow__lookup-close"
+                onClick={() => setShowLookupModal(false)}
+                aria-label="Fechar janela"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="booking-flow__lookup-lead">
+              Digite seu número de WhatsApp para ver seus horários marcados:
+            </p>
+
+            <form onSubmit={handleSearchCustomerAppointments} className="booking-flow__lookup-form">
+              <input
+                type="tel"
+                inputMode="tel"
+                placeholder="Ex: (89) 9 9999-9999"
+                value={lookupPhone}
+                onChange={(e) => setLookupPhone(e.target.value)}
+                className="booking-flow__text-input"
+                required
+              />
+              <button type="submit" className="btn btn-primary" disabled={lookupLoading}>
+                {lookupLoading ? "Buscando..." : "Buscar"}
+              </button>
+            </form>
+
+            {cancelFeedback && (
+              <div className="booking-flow__cancel-feedback">
+                <Check size={18} />
+                <span>{cancelFeedback}</span>
+              </div>
+            )}
+
+            {lookupResults !== null && (
+              <div className="booking-flow__lookup-results">
+                {lookupResults.length === 0 ? (
+                  <p className="booking-flow__lookup-empty">
+                    Nenhum agendamento encontrado para este número.
+                  </p>
+                ) : (
+                  <div className="booking-flow__lookup-list">
+                    {lookupResults.map((apt) => (
+                      <div key={apt.id} className={`booking-flow__lookup-item status-${apt.status}`}>
+                        <div className="booking-flow__lookup-item-main">
+                          <strong>{apt.service_name}</strong>
+                          <span>
+                            {formatDateBR(apt.date)} às {apt.start_time} · Barbeiro Leandro
+                          </span>
+                          <span className={`booking-flow__lookup-status status-${apt.status}`}>
+                            Status: {apt.status === "confirmed" ? "Confirmado" : apt.status === "cancelled" ? "Cancelado" : "Concluído"}
+                          </span>
+                        </div>
+
+                        {apt.status === "confirmed" && (
+                          <div className="booking-flow__lookup-actions">
+                            <a
+                              href={buildClientCancelWhatsappLink(apt)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-outline booking-flow__lookup-wa-btn"
+                              title="Avisar no WhatsApp"
+                            >
+                              <MessageCircle size={16} />
+                              Avisar no WhatsApp
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelAppointment(apt)}
+                              className="booking-flow__lookup-cancel-btn"
+                              title="Cancelar agendamento"
+                            >
+                              <Trash2 size={16} />
+                              Cancelar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

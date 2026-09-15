@@ -35,10 +35,23 @@ export default function Header({ onOpenBookingModal, onOpenAdmin }) {
         <nav className={`site-header__nav ${isOpen ? "is-open" : ""}`} aria-label="Navegação principal">
           <ul>
             {NAV_LINKS.map((link) => (
-              <li key={link.href}>
-                <a href={link.href} onClick={handleNavClick}>
-                  {link.label}
-                </a>
+              <li key={link.label}>
+                {link.href === "#agendamento" ? (
+                  <button
+                    type="button"
+                    className="site-header__nav-btn"
+                    onClick={() => {
+                      handleNavClick();
+                      if (onOpenBookingModal) onOpenBookingModal();
+                    }}
+                  >
+                    {link.label}
+                  </button>
+                ) : (
+                  <a href={link.href} onClick={handleNavClick}>
+                    {link.label}
+                  </a>
+                )}
               </li>
             ))}
           </ul>

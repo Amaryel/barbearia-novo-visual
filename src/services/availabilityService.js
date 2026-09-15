@@ -28,27 +28,38 @@ export const availabilityService = {
   /**
    * Calcula horários disponíveis para agendamento
    * @param {string} dateStr - YYYY-MM-DD
-   * @param {string} serviceId - ID do serviço
+   * @param {string|string[]} serviceIds - ID ou lista de IDs dos serviços
    * @param {string} barberId - ID do barbeiro ou "qualquer"
-   * @returns {Promise<{ isOpen: boolean, reason?: string, slots: Array<{ time: string, barberIds: string[] }> }>}
+   * @param {number} [customDurationMinutes] - Duração opcional já somada
+   * @returns {Promise<{ isOpen: boolean, reason?: string, slots: Array<{ time: string, endTime: string, freeBarbers: Array<{ id: string, name: string }> }> }>}
    */
-  async getAvailableSlots(dateStr, serviceId, barberId = "qualquer") {
+  async getAvailableSlots(dateStr, serviceIds, barberId = "qualquer", customDurationMinutes = null) {
     if (!dateStr) {
       return { isOpen: false, reason: "Selecione uma data", slots: [] };
     }
 
-    // 1. Obter serviço e duração
-    let durationMinutes = 30;
-    if (serviceId) {
-      const service = await serviceService.getById(serviceId);
-      if (service && service.duration_minutes) {
-        durationMinutes = service.duration_minutes;
+    // 1. Obter serviços e somar duração
+    let durationMinutes = customDurationMinutes || 0;
+    if (!durationMinutes) {
+      if (Array.isArray(serviceIds)) {
+        for (const sId of serviceIds) {
+          const srv = await serviceService.getById(sId);
+          if (srv && srv.duration_minutes) {
+            durationMinutes += srv.duration_minutes;
+          }
+        }
+      } else if (serviceIds) {
+        const service = await serviceService.getById(serviceIds);
+        if (service && service.duration_minutes) {
+          durationMinutes = service.duration_minutes;
+        }
       }
     }
+    if (!durationMinutes) durationMinutes = 30; // fallback seguro
 
     // 2. Determinar dia da semana
     const [year, month, day] = dateStr.split("-").map(Number);
-    const dateObj = new Date(year, month - 1, day, 12, 0, 0); // meio dia para evitar timezone shifting
+    const dateObj = new Date(year, month - 1, day, 12, 0, 0);
     const dayOfWeek = dateObj.getDay();
 
     // 3. Obter regras de horário de funcionamento
@@ -65,16 +76,12 @@ export const availabilityService = {
 
     // 4. Obter barbeiros candidatos
     const allBarbers = await barberService.getAll(true);
-    if (allBarbers.length === 0) {
-      return { isOpen: false, reason: "Nenhum barbeiro ativo no momento", slots: [] };
-    }
-
     let candidateBarbers = allBarbers;
     if (barberId && barberId !== "qualquer") {
       candidateBarbers = allBarbers.filter((b) => b.id === barberId);
-      if (candidateBarbers.length === 0) {
-        return { isOpen: false, reason: "Profissional selecionado não encontrado ou inativo", slots: [] };
-      }
+    }
+    if (candidateBarbers.length === 0) {
+      candidateBarbers = allBarbers;
     }
 
     // 5. Obter agendamentos e bloqueios da data
@@ -89,7 +96,7 @@ export const availabilityService = {
     const breakEndMinutes = businessHours.break_end ? parseTimeToMinutes(businessHours.break_end) : null;
 
     const availableSlots = [];
-    const stepMinutes = 30; // Granularidade da grade de horários
+    const stepMinutes = 30; // Grade de 30 em 30 min
 
     for (let current = openMinutes; current + durationMinutes <= closeMinutes; current += stepMinutes) {
       const slotStart = minutesToTimeString(current);
@@ -100,15 +107,14 @@ export const availabilityService = {
         const breakStart = minutesToTimeString(breakStartMinutes);
         const breakEnd = minutesToTimeString(breakEndMinutes);
         if (doTimeRangesOverlap(slotStart, slotEnd, breakStart, breakEnd)) {
-          continue; // Pula este slot pois bate no horário de almoço
+          continue;
         }
       }
 
-      // Verificar quais barbeiros candidatos estão livres neste intervalo exato
+      // Verificar quais barbeiros candidatos estão livres
       const freeBarbers = [];
 
       for (const barber of candidateBarbers) {
-        // Checar bloqueios deste barbeiro (ou bloqueios gerais onde barber_id === null)
         const isBlocked = blockedTimes.some((block) => {
           if (block.barber_id && block.barber_id !== barber.id) return false;
           if (block.is_full_day) return true;
@@ -120,9 +126,8 @@ export const availabilityService = {
 
         if (isBlocked) continue;
 
-        // Checar agendamentos existentes deste barbeiro
         const hasAppointmentConflict = existingAppointments.some((apt) => {
-          if (apt.barber_id !== barber.id && apt.barber_id !== "qualquer") {
+          if (apt.barber_id && apt.barber_id !== barber.id && apt.barber_id !== "qualquer") {
             return false;
           }
           return doTimeRangesOverlap(slotStart, slotEnd, apt.start_time, apt.end_time);

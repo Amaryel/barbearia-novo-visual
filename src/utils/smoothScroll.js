@@ -1,6 +1,20 @@
 import { useEffect } from "react";
 import Lenis from "lenis";
 
+let globalLenis = null;
+
+export function pauseSmoothScroll() {
+  if (globalLenis) {
+    globalLenis.stop();
+  }
+}
+
+export function resumeSmoothScroll() {
+  if (globalLenis) {
+    globalLenis.start();
+  }
+}
+
 /*
   Lenis assume o controle do scroll da página para deixá-lo mais suave e
   também assume a suavização dos links de âncora (Início, Serviços, etc).
@@ -14,9 +28,12 @@ export function useSmoothScroll() {
       anchors: true,
       lerp: 0.1,
     });
+    globalLenis = lenis;
 
     return () => {
       lenis.destroy();
+      globalLenis = null;
     };
   }, []);
 }
+

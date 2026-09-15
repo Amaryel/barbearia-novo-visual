@@ -18,11 +18,26 @@ export function formatDateBR(isoDate) {
 
 export function buildClientWhatsappLink(appointment, businessPhone = "5589994367235", businessName = "Barbearia Novo Visual") {
   const lines = [
-    `Olá! Gostaria de confirmar meu agendamento na ${businessName}:`,
+    `Olá Leandro! Gostaria de confirmar meu agendamento na ${businessName}:`,
     `✂️ Serviço: ${appointment.service_name}`,
-    `💈 Profissional: ${appointment.barber_name}`,
+    `💈 Barbeiro: Leandro`,
     `📅 Data: ${formatDateBR(appointment.date)}`,
     `⏰ Horário: ${appointment.start_time}`,
+    `👤 Nome: ${appointment.customer_name}`,
+    `📱 Telefone: ${appointment.customer_phone}`,
+  ];
+  if (appointment.notes) {
+    lines.push(`📝 Observação: ${appointment.notes}`);
+  }
+  const text = encodeURIComponent(lines.join("\n"));
+  return `https://wa.me/${businessPhone}?text=${text}`;
+}
+
+export function buildClientCancelWhatsappLink(appointment, businessPhone = "5589994367235", businessName = "Barbearia Novo Visual") {
+  const lines = [
+    `Olá Leandro! Preciso cancelar/remarcar meu agendamento na ${businessName}:`,
+    `✂️ Serviço: ${appointment.service_name}`,
+    `📅 Data: ${formatDateBR(appointment.date)} às ${appointment.start_time}`,
     `👤 Nome: ${appointment.customer_name}`,
     `📱 Telefone: ${appointment.customer_phone}`,
   ];
@@ -37,10 +52,10 @@ export function buildAdminToClientWhatsappLink(appointment, businessName = "Barb
     `Olá ${appointment.customer_name.split(" ")[0]}!`,
     `Confirmamos seu agendamento na ${businessName}:`,
     `✂️ Serviço: ${appointment.service_name}`,
-    `💈 Barbeiro: ${appointment.barber_name}`,
+    `💈 Barbeiro: Leandro`,
     `📅 Data: ${formatDateBR(appointment.date)}`,
     `⏰ Horário: ${appointment.start_time}`,
-    `Ficamos no aguardo! Caso precise reagendar, avise por aqui.`,
+    `Ficamos no aguardo! Caso precise reagendar ou cancelar, você pode avisar por aqui.`,
   ];
   const text = encodeURIComponent(lines.join("\n"));
   return `https://wa.me/${formattedPhone}?text=${text}`;
@@ -62,6 +77,10 @@ export const appointmentService = {
     }
     if (filters.status && filters.status !== "all") {
       list = list.filter((a) => a.status === filters.status);
+    }
+    if (filters.phone) {
+      const cleanTarget = filters.phone.replace(/\D/g, "");
+      list = list.filter((a) => (a.customer_phone || "").replace(/\D/g, "").includes(cleanTarget));
     }
     if (filters.search) {
       const q = filters.search.toLowerCase();
@@ -85,6 +104,14 @@ export const appointmentService = {
     return list.find((a) => a.id === id) || null;
   },
 
+  async getByPhone(phoneStr) {
+    if (!phoneStr) return [];
+    const clean = phoneStr.replace(/\D/g, "");
+    if (clean.length < 8) return [];
+    const list = storage.get(STORAGE_KEYS.APPOINTMENTS, []);
+    return list.filter((a) => (a.customer_phone || "").replace(/\D/g, "").includes(clean));
+  },
+
   async create(data) {
     const list = storage.get(STORAGE_KEYS.APPOINTMENTS, []);
     const duration = Number(data.duration_minutes) || 30;
@@ -101,8 +128,8 @@ export const appointmentService = {
       service_name: data.service_name || data.serviceName || "Serviço",
       service_price: Number(data.service_price || data.price) || 0,
       duration_minutes: duration,
-      barber_id: data.barber_id || data.barberId || "qualquer",
-      barber_name: data.barber_name || data.barberName || "Qualquer disponível",
+      barber_id: data.barber_id || data.barberId || "barb-leandro",
+      barber_name: data.barber_name || data.barberName || "Leandro",
       date: data.date,
       start_time: start_time,
       end_time: end_time,
@@ -143,6 +170,10 @@ export const appointmentService = {
     return this.update(id, { status: newStatus });
   },
 
+  async cancelByCustomer(id) {
+    return this.update(id, { status: "cancelled" });
+  },
+
   async delete(id) {
     const list = storage.get(STORAGE_KEYS.APPOINTMENTS, []);
     const filtered = list.filter((a) => a.id !== id);
@@ -157,7 +188,6 @@ export const appointmentService = {
     const completedToday = todayAppointments.filter((a) => a.status === "completed");
     const activeToday = todayAppointments.filter((a) => a.status === "confirmed" || a.status === "pending");
 
-    // Próximo atendimento hoje
     const nowTime = new Date().toTimeString().slice(0, 5);
     const upcomingToday = todayAppointments
       .filter((a) => a.status !== "completed" && a.start_time >= nowTime)

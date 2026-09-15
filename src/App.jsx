@@ -26,6 +26,17 @@ export default function App() {
   const [initialServiceId, setInitialServiceId] = useState("");
 
   useEffect(() => {
+    // Garante que o site sempre inicie no topo (página inicial / Hero) ao carregar ou recarregar
+    if ("scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+    if (window.location.hash === "#agendamento") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    window.scrollTo(0, 0);
+  }, []);
+
+  useEffect(() => {
     function handleLocationChange() {
       if (
         window.location.pathname.startsWith("/admin") ||

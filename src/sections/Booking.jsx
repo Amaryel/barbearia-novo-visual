@@ -6,10 +6,10 @@ export default function Booking() {
     <section id="agendamento" className="section booking">
       <div className="container">
         <div className="section-head">
-          <p className="kicker">Agendamento Online</p>
-          <h2>Marque seu horário em poucos cliques</h2>
+          <p className="kicker">Agendamento Fácil & Rápido</p>
+          <h2>Marque seu horário em poucos passos</h2>
           <p>
-            Escolha o serviço, seu profissional de preferência e o melhor horário disponível na nossa agenda.
+            Escolha o serviço desejado, confira os horários livres com o Barbeiro Leandro e garanta seu atendimento sem complicação.
           </p>
         </div>
 
