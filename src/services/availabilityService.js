@@ -95,8 +95,14 @@ export const availabilityService = {
     const breakStartMinutes = businessHours.break_start ? parseTimeToMinutes(businessHours.break_start) : null;
     const breakEndMinutes = businessHours.break_end ? parseTimeToMinutes(businessHours.break_end) : null;
 
-    const availableSlots = [];
+    const allSlots = [];
     const stepMinutes = 30; // Grade de 30 em 30 min
+
+    // Data/hora atual para desabilitar horários passados se a data for hoje
+    const now = new Date();
+    const todayIso = now.toISOString().slice(0, 10);
+    const currentMinutesNow = now.getHours() * 60 + now.getMinutes();
+    const isToday = dateStr === todayIso;
 
     for (let current = openMinutes; current + durationMinutes <= closeMinutes; current += stepMinutes) {
       const slotStart = minutesToTimeString(current);
@@ -107,12 +113,17 @@ export const availabilityService = {
         const breakStart = minutesToTimeString(breakStartMinutes);
         const breakEnd = minutesToTimeString(breakEndMinutes);
         if (doTimeRangesOverlap(slotStart, slotEnd, breakStart, breakEnd)) {
-          continue;
+          continue; // Intervalo de almoço não entra na grade
         }
       }
 
+      // Se for hoje e o horário já passou
+      const isPast = isToday && (current + 10 <= currentMinutesNow);
+
       // Verificar quais barbeiros candidatos estão livres
       const freeBarbers = [];
+      let isOccupiedByAppointment = false;
+      let isBlockedByAdmin = false;
 
       for (const barber of candidateBarbers) {
         const isBlocked = blockedTimes.some((block) => {
@@ -124,7 +135,10 @@ export const availabilityService = {
           return false;
         });
 
-        if (isBlocked) continue;
+        if (isBlocked) {
+          isBlockedByAdmin = true;
+          continue;
+        }
 
         const hasAppointmentConflict = existingAppointments.some((apt) => {
           if (apt.barber_id && apt.barber_id !== barber.id && apt.barber_id !== "qualquer") {
@@ -133,24 +147,47 @@ export const availabilityService = {
           return doTimeRangesOverlap(slotStart, slotEnd, apt.start_time, apt.end_time);
         });
 
-        if (!hasAppointmentConflict) {
+        if (hasAppointmentConflict) {
+          isOccupiedByAppointment = true;
+        } else {
           freeBarbers.push(barber);
         }
       }
 
-      if (freeBarbers.length > 0) {
-        availableSlots.push({
-          time: slotStart,
-          endTime: slotEnd,
-          freeBarbers: freeBarbers.map((b) => ({ id: b.id, name: b.name })),
-        });
+      const isAvailable = !isPast && freeBarbers.length > 0;
+      let status = "available";
+      let statusLabel = "Livre";
+
+      if (isPast) {
+        status = "past";
+        statusLabel = "Encerrado";
+      } else if (isOccupiedByAppointment) {
+        status = "occupied";
+        statusLabel = "Ocupado";
+      } else if (isBlockedByAdmin) {
+        status = "blocked";
+        statusLabel = "Bloqueado";
+      } else if (!isAvailable) {
+        status = "unavailable";
+        statusLabel = "Indisponível";
       }
+
+      allSlots.push({
+        time: slotStart,
+        endTime: slotEnd,
+        isAvailable,
+        status,
+        statusLabel,
+        freeBarbers: freeBarbers.map((b) => ({ id: b.id, name: b.name })),
+      });
     }
 
     return {
       isOpen: true,
       businessHours,
-      slots: availableSlots,
+      slots: allSlots,
+      availableCount: allSlots.filter((s) => s.isAvailable).length,
+      occupiedCount: allSlots.filter((s) => !s.isAvailable).length,
     };
   },
 };

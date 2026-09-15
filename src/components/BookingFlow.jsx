@@ -25,6 +25,8 @@ import {
   Search,
   Sparkles,
   ShieldCheck,
+  Home,
+  Lock,
 } from "lucide-react";
 import "./BookingFlow.css";
 
@@ -255,7 +257,8 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
   }
 
   // Seleção de horário
-  function handleSelectTime(timeSlot) {
+  function handleSelectTime(timeSlot, isAvailable = true) {
+    if (!isAvailable) return;
     setSelectedTime(timeSlot);
     setErrors({});
     // Rola direto para o botão de continuar para o próximo passo
@@ -280,7 +283,7 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
         if (isCurrent) {
           setAvailability(res);
           setSelectedTime((prevTime) =>
-            prevTime && !res.slots.some((s) => s.time === prevTime) ? "" : prevTime
+            prevTime && !res.slots.some((s) => s.time === prevTime && s.isAvailable) ? "" : prevTime
           );
         }
       } catch (err) {
@@ -392,6 +395,19 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
     setCustomerNotes("");
     setConfirmedBooking(null);
     setErrors({});
+  }
+
+  function handleFinishAndGoHome() {
+    handleReset();
+    if (onClose) {
+      onClose();
+    }
+    // Rola a tela suavemente para o início da landing page
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    const heroEl = document.getElementById("inicio") || document.getElementById("topo") || document.body;
+    if (heroEl && heroEl.scrollIntoView) {
+      heroEl.scrollIntoView({ behavior: "smooth" });
+    }
   }
 
   // Consulta e cancelamento de agendamento por telefone
@@ -511,12 +527,23 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
             </a>
           </div>
 
+          {/* Botão de Concluir e Voltar ao Início */}
+          <button
+            type="button"
+            className="btn btn-primary booking-flow__finish-home-btn"
+            onClick={handleFinishAndGoHome}
+            id="booking-finish-and-go-home-btn"
+          >
+            <Home size={22} />
+            <span>Concluir e Voltar ao Início</span>
+          </button>
+
           <div className="booking-flow__secondary-btns">
             <button type="button" className="btn btn-outline" onClick={handleReset}>
               Agendar outro horário
             </button>
             {onClose && (
-              <button type="button" className="btn btn-outline" onClick={onClose}>
+              <button type="button" className="btn btn-outline" onClick={handleFinishAndGoHome}>
                 Fechar
               </button>
             )}
@@ -792,9 +819,23 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
 
             {/* Visualização de Horários Disponíveis do Dia Selecionado */}
             <div className="booking-flow__slots-container" id="booking-slots-container">
-              <div className="booking-flow__slots-head">
-                <Clock size={20} />
-                <h4>Horários livres para {formatDateBR(selectedDate)}:</h4>
+              <div className="booking-flow__slots-header-bar">
+                <div className="booking-flow__slots-head">
+                  <Clock size={20} />
+                  <h4>Horários para {formatDateBR(selectedDate)}:</h4>
+                </div>
+                {availability.isOpen && availability.slots.length > 0 && (
+                  <div className="booking-flow__slots-legend">
+                    <span className="booking-flow__legend-item">
+                      <span className="booking-flow__legend-dot is-available" />
+                      Disponível ({availability.availableCount ?? availability.slots.filter((s) => s.isAvailable).length})
+                    </span>
+                    <span className="booking-flow__legend-item">
+                      <span className="booking-flow__legend-dot is-occupied" />
+                      Ocupado / Indisponível ({availability.occupiedCount ?? availability.slots.filter((s) => !s.isAvailable).length})
+                    </span>
+                  </div>
+                )}
               </div>
 
               {loadingSlots ? (
@@ -813,8 +854,8 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
               ) : availability.slots.length === 0 ? (
                 <div className="booking-flow__empty-slots">
                   <AlertCircle size={32} />
-                  <h4>Todos os horários deste dia já foram preenchidos</h4>
-                  <p>Por favor, toque em outro dia nos botões acima para ver outros horários disponíveis.</p>
+                  <h4>Nenhum horário cadastrado para este dia</h4>
+                  <p>Por favor, toque em outro dia nos botões acima para ver os horários de funcionamento.</p>
                 </div>
               ) : (
                 <div className="booking-flow__slots-groups">
@@ -835,15 +876,32 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
                       <div className="booking-flow__slots-grid">
                         {morningSlots.map((slot) => {
                           const isSelected = selectedTime === slot.time;
+                          const isAvailable = slot.isAvailable;
                           return (
                             <button
                               type="button"
                               key={slot.time}
-                              className={`booking-flow__slot-btn ${isSelected ? "is-selected" : ""}`}
-                              onClick={() => handleSelectTime(slot.time)}
+                              className={`booking-flow__slot-btn ${isSelected ? "is-selected" : ""} ${
+                                !isAvailable ? "is-unavailable is-" + slot.status : "is-available"
+                              }`}
+                              onClick={() => handleSelectTime(slot.time, isAvailable)}
+                              disabled={!isAvailable}
+                              aria-disabled={!isAvailable}
+                              title={
+                                !isAvailable
+                                  ? `Horário ${slot.time} já está ${slot.statusLabel || "ocupado"}`
+                                  : `Horário ${slot.time} disponível`
+                              }
                             >
                               <strong className="booking-flow__slot-time">{slot.time}</strong>
-                              <span className="booking-flow__slot-sub">até {slot.endTime}</span>
+                              {isAvailable ? (
+                                <span className="booking-flow__slot-sub">até {slot.endTime}</span>
+                              ) : (
+                                <span className="booking-flow__slot-status-tag">
+                                  <Lock size={11} />
+                                  <span>{slot.statusLabel || "Ocupado"}</span>
+                                </span>
+                              )}
                               {isSelected && <Check size={18} className="booking-flow__slot-check" />}
                             </button>
                           );
@@ -859,15 +917,32 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
                       <div className="booking-flow__slots-grid">
                         {afternoonSlots.map((slot) => {
                           const isSelected = selectedTime === slot.time;
+                          const isAvailable = slot.isAvailable;
                           return (
                             <button
                               type="button"
                               key={slot.time}
-                              className={`booking-flow__slot-btn ${isSelected ? "is-selected" : ""}`}
-                              onClick={() => handleSelectTime(slot.time)}
+                              className={`booking-flow__slot-btn ${isSelected ? "is-selected" : ""} ${
+                                !isAvailable ? "is-unavailable is-" + slot.status : "is-available"
+                              }`}
+                              onClick={() => handleSelectTime(slot.time, isAvailable)}
+                              disabled={!isAvailable}
+                              aria-disabled={!isAvailable}
+                              title={
+                                !isAvailable
+                                  ? `Horário ${slot.time} já está ${slot.statusLabel || "ocupado"}`
+                                  : `Horário ${slot.time} disponível`
+                              }
                             >
                               <strong className="booking-flow__slot-time">{slot.time}</strong>
-                              <span className="booking-flow__slot-sub">até {slot.endTime}</span>
+                              {isAvailable ? (
+                                <span className="booking-flow__slot-sub">até {slot.endTime}</span>
+                              ) : (
+                                <span className="booking-flow__slot-status-tag">
+                                  <Lock size={11} />
+                                  <span>{slot.statusLabel || "Ocupado"}</span>
+                                </span>
+                              )}
                               {isSelected && <Check size={18} className="booking-flow__slot-check" />}
                             </button>
                           );

@@ -649,6 +649,47 @@
   gap: 1.5rem;
 }
 
+.booking-flow__slots-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.booking-flow__slots-legend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary, #d1c7bc);
+}
+
+.booking-flow__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.booking-flow__legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.booking-flow__legend-dot.is-available {
+  background: var(--color-brass, #c8a97e);
+  box-shadow: 0 0 6px rgba(200, 169, 126, 0.6);
+}
+
+.booking-flow__legend-dot.is-occupied {
+  background: #64748b;
+  border: 1px solid #475569;
+}
+
 .booking-flow__time-group-title {
   font-size: 0.95rem;
   text-transform: uppercase;
@@ -669,7 +710,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0.95rem 0.5rem;
+  padding: 0.85rem 0.5rem;
   border-radius: var(--radius-md, 10px);
   background: var(--color-surface, #1b1815);
   border: 2px solid var(--color-line, #3d352e);
@@ -680,9 +721,10 @@
   min-height: 60px;
 }
 
-.booking-flow__slot-btn:hover {
+.booking-flow__slot-btn.is-available:hover {
   background: #2a2520;
   border-color: var(--color-brass, #c8a97e);
+  transform: translateY(-2px);
 }
 
 .booking-flow__slot-btn.is-selected {
@@ -690,6 +732,48 @@
   border-color: var(--color-brass, #c8a97e);
   color: #110f0d;
   box-shadow: 0 0 16px rgba(200, 169, 126, 0.45);
+}
+
+/* Horários Ocupados / Indisponíveis */
+.booking-flow__slot-btn.is-unavailable {
+  background: rgba(27, 24, 21, 0.65);
+  border: 1.5px dashed rgba(100, 116, 139, 0.45);
+  color: #64748b;
+  cursor: not-allowed;
+  opacity: 0.78;
+  filter: grayscale(0.5);
+}
+
+.booking-flow__slot-btn.is-unavailable .booking-flow__slot-time {
+  color: #94a3b8;
+  text-decoration: line-through;
+  opacity: 0.8;
+  font-size: 1.05rem;
+}
+
+.booking-flow__slot-btn.is-unavailable:hover {
+  background: rgba(27, 24, 21, 0.8);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.booking-flow__slot-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-pill, 9999px);
+  margin-top: 0.25rem;
+}
+
+.booking-flow__slot-btn.is-past .booking-flow__slot-status-tag {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
 }
 
 .booking-flow__slot-time {
