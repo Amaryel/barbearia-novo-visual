@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Clock, ArrowRight, Scissors } from "lucide-react";
 import { serviceService } from "../services/serviceService";
 import { storage } from "../services/storage";
 import { SERVICES as DEFAULT_SERVICES } from "../utils/data";
@@ -40,39 +41,63 @@ export default function Services({ onSelectService }) {
     <section id="servicos" className="section services">
       <div className="container">
         <div className="section-head">
-          <p className="kicker">Serviços</p>
-          <h2>Cada serviço, um padrão só</h2>
+          <p className="kicker">Nossos Serviços</p>
+          <h2>Menu de Atendimentos</h2>
           <p>
-            Escolha o atendimento ideal para o seu estilo e garanta seu horário com nossos profissionais.
+            Escolha o serviço desejado e garanta seu horário exclusivo com nossos mestres barbeiros.
           </p>
         </div>
 
         <ul className="services__grid">
-          {services.map((service) => (
-            <li
-              key={service.id}
-              className="service-ticket"
-              style={{ cursor: "pointer" }}
-              onClick={() => {
-                if (onSelectService) {
-                  onSelectService(service.id);
-                } else {
-                  const el = document.getElementById("agendamento");
-                  if (el) el.scrollIntoView({ behavior: "smooth" });
-                }
-              }}
-              title="Clique para agendar este serviço"
-            >
-              <div className="service-ticket__body">
-                <h3>{service.name}</h3>
-                <p>{service.description}</p>
-              </div>
-              <div className="service-ticket__foot">
-                <span className="service-ticket__duration">{service.duration} min</span>
-                <span className="service-ticket__price">{currency.format(service.price)}</span>
-              </div>
-            </li>
-          ))}
+          {services.map((service, index) => {
+            const isPopular = index === 0 || service.name.toLowerCase().includes("combo");
+            return (
+              <li
+                key={service.id}
+                className={`service-ticket ${isPopular ? "is-popular" : ""}`}
+                onClick={() => {
+                  if (onSelectService) {
+                    onSelectService(service.id);
+                  } else {
+                    const el = document.getElementById("agendamento");
+                    if (el) el.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    if (onSelectService) onSelectService(service.id);
+                  }
+                }}
+                title="Clique para agendar este corte/serviço"
+              >
+                {isPopular && <span className="service-ticket__badge">Mais Solicitado</span>}
+
+                <div className="service-ticket__body">
+                  <div className="service-ticket__title-row">
+                    <Scissors size={18} className="service-ticket__icon" />
+                    <h3>{service.name}</h3>
+                  </div>
+                  <p>{service.description}</p>
+                </div>
+
+                <div className="service-ticket__foot">
+                  <div className="service-ticket__meta">
+                    <span className="service-ticket__duration">
+                      <Clock size={14} />
+                      {service.duration} min
+                    </span>
+                    <span className="service-ticket__price">{currency.format(service.price)}</span>
+                  </div>
+
+                  <span className="service-ticket__btn-action">
+                    Agendar <ArrowRight size={14} />
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </section>

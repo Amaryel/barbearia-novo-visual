@@ -6,9 +6,9 @@ const NAV_LINKS = [
   { label: "Início", href: "#topo" },
   { label: "Serviços", href: "#servicos" },
   { label: "Sobre", href: "#sobre" },
+  { label: "Avaliações", href: "#avaliacoes" },
   { label: "Agendar", href: "#agendamento" },
   { label: "Localização", href: "#localizacao" },
-  { label: "Contato", href: "#contato" },
 ];
 
 export default function Header({ onOpenBookingModal, onOpenAdmin }) {

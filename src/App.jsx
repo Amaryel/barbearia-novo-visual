@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import Hero from "./sections/Hero";
+import TrustBar from "./components/TrustBar";
 import About from "./sections/About";
 import Services from "./sections/Services";
 import Gallery from "./sections/Gallery";
+import Reviews from "./sections/Reviews";
 import Booking from "./sections/Booking";
 import Location from "./sections/Location";
 import ChatWidget from "./components/ChatWidget";
@@ -88,9 +90,11 @@ export default function App() {
       />
       <main>
         <Hero onOpenBookingModal={() => handleOpenBookingModal("")} />
+        <TrustBar />
         <About />
         <Services onSelectService={(sId) => handleOpenBookingModal(sId)} />
         <Gallery />
+        <Reviews />
         <Booking />
         <Location />
       </main>
