@@ -1,0 +1,8 @@
+{
+  "name": "Barbearia Novo Visual",
+  "description": "Barbearia de alto padrão em Picos, PI com corte, barba, tratamentos e agendamento online.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const app = express();
-const port = process.env.PORT || 8787;
+const port = process.env.PORT || 3000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 app.use(express.json({ limit: "32kb" }));
@@ -32,6 +32,18 @@ app.post("/api/chat", async (request, response) => {
   }
 });
 
-app.use(express.static(path.join(__dirname, "dist")));
-app.get("/{*path}", (_request, response) => response.sendFile(path.join(__dirname, "dist", "index.html")));
-app.listen(port, () => console.log(`Servidor disponível em http://localhost:${port}`));
+if (process.env.NODE_ENV !== "production") {
+  const { createServer: createViteServer } = await import("vite");
+  const vite = await createViteServer({
+    server: { middlewareMode: true, host: "0.0.0.0", port: 3000 },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
+} else {
+  const distPath = path.join(__dirname, "dist");
+  app.use(express.static(distPath));
+  app.get("/{*path}", (_request, response) => response.sendFile(path.join(distPath, "index.html")));
+}
+
+app.listen(port, "0.0.0.0", () => console.log(`Servidor disponível em http://0.0.0.0:${port}`));
+
