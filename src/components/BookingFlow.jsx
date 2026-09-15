@@ -219,11 +219,16 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
   // Toggle serviço (permite marcar e desmarcar qualquer serviço livremente)
   function handleToggleService(serviceId) {
     setSelectedServiceIds((prev) => {
-      if (prev.includes(serviceId)) {
-        return prev.filter((id) => id !== serviceId);
-      } else {
-        return [...prev, serviceId];
+      const willBeSelected = !prev.includes(serviceId);
+      const nextList = willBeSelected ? [...prev, serviceId] : prev.filter((id) => id !== serviceId);
+
+      if (willBeSelected) {
+        // Rola direto para o botão de continuar / resumo para evitar rolagem manual
+        setTimeout(() => {
+          scrollToElement("#booking-step1-summary", 24);
+        }, 120);
       }
+      return nextList;
     });
     setErrors({});
   }
@@ -231,6 +236,9 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
   function handleAddService(serviceId) {
     if (!selectedServiceIds.includes(serviceId)) {
       setSelectedServiceIds((prev) => [...prev, serviceId]);
+      setTimeout(() => {
+        scrollToElement("#booking-step1-summary", 24);
+      }, 120);
     }
   }
 
@@ -240,12 +248,20 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
     setSelectedDate(dayIso);
     setSelectedTime("");
     setErrors({});
+    // Rola direto para a lista de horários livres disponíveis
+    setTimeout(() => {
+      scrollToElement("#booking-slots-container", 20);
+    }, 120);
   }
 
   // Seleção de horário
   function handleSelectTime(timeSlot) {
     setSelectedTime(timeSlot);
     setErrors({});
+    // Rola direto para o botão de continuar para o próximo passo
+    setTimeout(() => {
+      scrollToElement("#booking-footer-nav", 24);
+    }, 120);
   }
 
   // Carrega horários disponíveis quando a data ou os serviços mudam
@@ -1055,6 +1071,30 @@ export default function BookingFlow({ onCompleted, initialServiceId = "", onClos
           </button>
         )}
       </div>
+
+      {/* BARRA FIXA FLUTUANTE EM DISPOSITIVOS MÓVEIS (Acelera o avanço sem precisar rolar a tela) */}
+      {isStepValid && !confirmedBooking && step < 4 && (
+        <div className="booking-flow__mobile-sticky-bar" id="booking-mobile-sticky-bar">
+          <div className="booking-flow__mobile-sticky-info">
+            <span className="booking-flow__mobile-sticky-step">Passo {step} de 4 pronto</span>
+            <strong className="booking-flow__mobile-sticky-label">
+              {step === 1
+                ? `${selectedServices.length} serviço(s) · R$ ${totalPrice}`
+                : step === 2
+                ? `${formatDateBR(selectedDate)} às ${selectedTime}`
+                : `${customerName || "Dados informados"}`}
+            </strong>
+          </div>
+          <button
+            type="button"
+            className="booking-flow__mobile-sticky-btn"
+            onClick={handleNext}
+          >
+            <span>Avançar</span>
+            <ArrowRight size={18} />
+          </button>
+        </div>
+      )}
 
       {/* MODAL DE CONSULTA / CANCELAMENTO */}
       {showLookupModal && (
