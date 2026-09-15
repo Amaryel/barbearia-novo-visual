@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { BUSINESS } from "../utils/data";
+import { ShieldCheck } from "lucide-react";
 import "./Footer.css";
 
 const emptyContact = { name: "", phone: "", message: "" };
 
-export default function Footer() {
+export default function Footer({ onOpenAdmin }) {
   const [contact, setContact] = useState(emptyContact);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -18,8 +19,6 @@ export default function Footer() {
       setError("Preencha nome, telefone e mensagem para enviar.");
       return;
     }
-    // PONTO DE INTEGRAÇÃO FUTURA: enviar para um endpoint/API própria ou serviço de e-mail.
-    // Por ora, apenas confirma o recebimento na tela.
     setError("");
     setSent(true);
     setContact(emptyContact);
@@ -91,7 +90,28 @@ export default function Footer() {
         <p>
           {BUSINESS.name} — {BUSINESS.city}
         </p>
-        <p>Site institucional de demonstração.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem", flexWrap: "wrap" }}>
+          <p>Site institucional e sistema de agendamento.</p>
+          <button
+            type="button"
+            onClick={onOpenAdmin}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--color-line-soft)",
+              color: "var(--color-brass-bright)",
+              padding: "0.25rem 0.6rem",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "0.75rem",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.35rem",
+              cursor: "pointer",
+            }}
+          >
+            <ShieldCheck size={14} />
+            Painel do Barbeiro (/admin)
+          </button>
+        </div>
       </div>
     </footer>
   );

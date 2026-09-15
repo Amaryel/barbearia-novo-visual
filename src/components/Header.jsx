@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import "./Header.css";
 
 const NAV_LINKS = [
@@ -10,7 +11,7 @@ const NAV_LINKS = [
   { label: "Contato", href: "#contato" },
 ];
 
-export default function Header() {
+export default function Header({ onOpenBookingModal, onOpenAdmin }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -41,9 +42,48 @@ export default function Header() {
               </li>
             ))}
           </ul>
-          <a href="#agendamento" className="btn btn-primary site-header__cta" onClick={handleNavClick}>
-            Agendar horário
-          </a>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <button
+              type="button"
+              className="btn btn-primary site-header__cta"
+              onClick={() => {
+                handleNavClick();
+                if (onOpenBookingModal) {
+                  onOpenBookingModal();
+                } else {
+                  const el = document.getElementById("agendamento");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }
+              }}
+            >
+              Agendar horário
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                handleNavClick();
+                if (onOpenAdmin) onOpenAdmin();
+              }}
+              title="Acessar Painel Administrativo (/admin)"
+              style={{
+                background: "transparent",
+                border: "1px solid var(--color-line)",
+                color: "var(--color-brass-bright)",
+                padding: "0.55rem 0.75rem",
+                borderRadius: "var(--radius-sm)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.35rem",
+                cursor: "pointer",
+                fontSize: "var(--step--1)",
+              }}
+            >
+              <ShieldCheck size={16} />
+              <span>Admin</span>
+            </button>
+          </div>
         </nav>
 
         <button

@@ -1,7 +1,7 @@
 import { BUSINESS } from "../utils/data";
 import "./Hero.css";
 
-export default function Hero() {
+export default function Hero({ onOpenBookingModal }) {
   const whatsappHref = `https://wa.me/${BUSINESS.whatsappNumber}?text=${encodeURIComponent(
     "Olá! Gostaria de mais informações sobre a Barbearia Novo Visual."
   )}`;
@@ -22,9 +22,20 @@ export default function Hero() {
             próprio estilo como investimento.
           </p>
           <div className="hero__actions">
-            <a href="#agendamento" className="btn btn-primary">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                if (onOpenBookingModal) {
+                  onOpenBookingModal();
+                } else {
+                  const el = document.getElementById("agendamento");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }
+              }}
+            >
               Agendar horário
-            </a>
+            </button>
             <a href={whatsappHref} target="_blank" rel="noreferrer" className="btn btn-outline">
               Falar no WhatsApp
             </a>
